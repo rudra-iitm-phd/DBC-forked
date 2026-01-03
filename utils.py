@@ -181,3 +181,12 @@ class FrameStack(gym.Wrapper):
     def _get_obs(self):
         assert len(self._frames) == self._k
         return np.concatenate(list(self._frames), axis=0)
+
+
+def count_nonzero_grads(model):
+    count = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            if torch.any(p.grad != 0):
+                count += 1
+    return count

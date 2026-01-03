@@ -97,7 +97,7 @@ _AVAILABLE_TRANSITION_MODELS = {'': DeterministicTransitionModel,
                                 'ensemble': EnsembleOfProbabilisticTransitionModels}
 
 
-def make_transition_model(transition_model_type, encoder_feature_dim, action_shape, layer_width=512):
+def make_transition_model(transition_model_type, encoder_feature_dim, action_shape, layer_width=200):
     assert transition_model_type in _AVAILABLE_TRANSITION_MODELS
     return _AVAILABLE_TRANSITION_MODELS[transition_model_type](
         encoder_feature_dim, action_shape, layer_width

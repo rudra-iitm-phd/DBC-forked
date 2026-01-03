@@ -12,15 +12,17 @@ import gym
 import time
 import json
 import dmc2gym
+import wandb
 
 import utils
+import shared
 from logger import Logger
 from video import VideoRecorder
 
 from agent.baseline_agent import BaselineAgent
 from agent.bisim_agent import BisimAgent
 from agent.deepmdp_agent import DeepMDPAgent
-from agents.navigation.carla_env import CarlaEnv
+# from agents.navigation.carla_env import CarlaEnv
 
 
 def parse_args():
@@ -34,48 +36,50 @@ def parse_args():
     parser.add_argument('--resource_files', type=str)
     parser.add_argument('--eval_resource_files', type=str)
     parser.add_argument('--img_source', default=None, type=str, choices=['color', 'noise', 'images', 'video', 'none'])
-    parser.add_argument('--total_frames', default=1000, type=int)
+    parser.add_argument('--total_frames', default=1e6, type=int)
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=1000000, type=int)
     # train
     parser.add_argument('--agent', default='bisim', type=str, choices=['baseline', 'bisim', 'deepmdp'])
     parser.add_argument('--init_steps', default=1000, type=int)
     parser.add_argument('--num_train_steps', default=1000000, type=int)
-    parser.add_argument('--batch_size', default=512, type=int)
-    parser.add_argument('--hidden_dim', default=256, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
+    parser.add_argument('--hidden_dim', default=200, type=int)
     parser.add_argument('--k', default=3, type=int, help='number of steps for inverse model')
     parser.add_argument('--bisim_coef', default=0.5, type=float, help='coefficient for bisim terms')
     parser.add_argument('--load_encoder', default=None, type=str)
     # eval
-    parser.add_argument('--eval_freq', default=10, type=int)  # TODO: master had 10000
+    parser.add_argument('--eval_freq', default=10000, type=int)  # TODO: master had 10000
     parser.add_argument('--num_eval_episodes', default=20, type=int)
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=1e-5, type=float)
     parser.add_argument('--critic_beta', default=0.9, type=float)
     parser.add_argument('--critic_tau', default=0.005, type=float)
     parser.add_argument('--critic_target_update_freq', default=2, type=int)
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=1e-5, type=float)
     parser.add_argument('--actor_beta', default=0.9, type=float)
-    parser.add_argument('--actor_log_std_min', default=-10, type=float)
+    parser.add_argument('--actor_log_std_min', default=-5, type=float)
     parser.add_argument('--actor_log_std_max', default=2, type=float)
     parser.add_argument('--actor_update_freq', default=2, type=int)
     # encoder/decoder
     parser.add_argument('--encoder_type', default='pixel', type=str, choices=['pixel', 'pixelCarla096', 'pixelCarla098', 'identity'])
     parser.add_argument('--encoder_feature_dim', default=50, type=int)
-    parser.add_argument('--encoder_lr', default=1e-3, type=float)
+    parser.add_argument('--encoder_lr', default=1e-5, type=float)
     parser.add_argument('--encoder_tau', default=0.005, type=float)
     parser.add_argument('--encoder_stride', default=1, type=int)
     parser.add_argument('--decoder_type', default='pixel', type=str, choices=['pixel', 'identity', 'contrastive', 'reward', 'inverse', 'reconstruction'])
-    parser.add_argument('--decoder_lr', default=1e-3, type=float)
+    parser.add_argument('--decoder_lr', default=1e-5, type=float)
     parser.add_argument('--decoder_update_freq', default=1, type=int)
-    parser.add_argument('--decoder_weight_lambda', default=0.0, type=float)
+    parser.add_argument('--decoder_weight_lambda', default=1e-7, type=float)
     parser.add_argument('--num_layers', default=4, type=int)
     parser.add_argument('--num_filters', default=32, type=int)
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
-    parser.add_argument('--init_temperature', default=0.01, type=float)
-    parser.add_argument('--alpha_lr', default=1e-3, type=float)
+    parser.add_argument('--init_temperature', default=0.1, type=float)
+
+    # As per paper, temperature learning rate is 1e-4
+    parser.add_argument('--alpha_lr', default=1e-4, type=float)
     parser.add_argument('--alpha_beta', default=0.9, type=float)
     # misc
     parser.add_argument('--seed', default=1, type=int)
@@ -370,6 +374,7 @@ def main():
             # evaluate agent periodically
             if episode % args.eval_freq == 0:
                 L.log('eval/episode', episode, step)
+                # evaluate takes Logger as argument
                 evaluate(eval_env, agent, video, args.num_eval_episodes, L, step)
                 if args.save_model:
                     agent.save(model_dir, step)
@@ -398,6 +403,7 @@ def main():
         if step >= args.init_steps:
             num_updates = args.init_steps if step == args.init_steps else 1
             for _ in range(num_updates):
+                # update method of agent also takes Logger
                 agent.update(replay_buffer, L, step)
 
         curr_reward = reward

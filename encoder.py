@@ -64,8 +64,12 @@ class PixelEncoder(nn.Module):
         h_fc = self.fc(h)
         self.outputs['fc'] = h_fc
 
-        out = self.ln(h_fc)
-        self.outputs['ln'] = out
+        # out = self.ln(h_fc)
+        # self.outputs['ln'] = out
+
+        # As per paper final output from conv uses tanh non linearity
+        out = torch.tanh(h_fc)
+        self.outputs['tanh']=out
 
         return out
 

@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import utils
+import shared
 from sac_ae import  Actor, Critic, LOG_FREQ
 from transition_model import make_transition_model
 
@@ -22,7 +23,7 @@ class BisimAgent(object):
         action_shape,
         device,
         transition_model_type,
-        hidden_dim=256,
+        hidden_dim=200,
         discount=0.99,
         init_temperature=0.01,
         alpha_lr=1e-3,
@@ -61,6 +62,8 @@ class BisimAgent(object):
         self.transition_model_type = transition_model_type
         self.bisim_coef = bisim_coef
 
+        self.actor_grads, self.critic_grads, self.encoder_grads, self.decoder_grads = 0, 0, 0, 0
+
         self.actor = Actor(
             obs_shape, action_shape, hidden_dim, encoder_type,
             encoder_feature_dim, actor_log_std_min, actor_log_std_max,
@@ -79,15 +82,17 @@ class BisimAgent(object):
 
         self.critic_target.load_state_dict(self.critic.state_dict())
 
+        # As per paper, layer width is 200
         self.transition_model = make_transition_model(
-            transition_model_type, encoder_feature_dim, action_shape
+            transition_model_type, encoder_feature_dim, action_shape, layer_width=200
         ).to(device)
 
+        # As per paper modifications, each layer has 200 neurons
         self.reward_decoder = nn.Sequential(
-            nn.Linear(encoder_feature_dim, 512),
-            nn.LayerNorm(512),
+            nn.Linear(encoder_feature_dim, 200),
+            nn.LayerNorm(200),
             nn.ReLU(),
-            nn.Linear(512, 1)).to(device)
+            nn.Linear(200, 1)).to(device)
 
         # tie encoders between actor and critic
         self.actor.encoder.copy_conv_weights_from(self.critic.encoder)
@@ -167,6 +172,9 @@ class BisimAgent(object):
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+
+        self.critic_grads = utils.count_nonzero_grads(self.critic)
+
         self.critic_optimizer.step()
 
         self.critic.log(L, step)
@@ -188,6 +196,9 @@ class BisimAgent(object):
         # optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+
+        self.actor_grads = utils.count_nonzero_grads(self.actor)
+
         self.actor_optimizer.step()
 
         self.actor.log(L, step)
@@ -270,8 +281,31 @@ class BisimAgent(object):
         self.encoder_optimizer.zero_grad()
         self.decoder_optimizer.zero_grad()
         total_loss.backward()
+
+        self.encoder_grads = utils.count_nonzero_grads(self.critic.encoder)
+        self.decoder_grads = utils.count_nonzero_grads(self.reward_decoder)
+        
+        # Count transition model grads (handling ensemble case)
+        if hasattr(self.transition_model, 'models'):  # ensemble
+            transition_grads = sum(utils.count_nonzero_grads(model) for model in self.transition_model.models)
+        else:  # single model
+            transition_grads = utils.count_nonzero_grads(self.transition_model)
+        
+        self.decoder_grads += transition_grads
+
+        total_grad_steps = self.actor_grads + self.critic_grads + self.encoder_grads + self.decoder_grads
+        shared.n_grads = total_grad_steps
+
+        L.log('train/n_gradients', total_grad_steps, step)
+
+
         self.encoder_optimizer.step()
         self.decoder_optimizer.step()
+
+
+        
+        
+        
 
         if step % self.actor_update_freq == 0:
             self.update_actor_and_alpha(obs, L, step)

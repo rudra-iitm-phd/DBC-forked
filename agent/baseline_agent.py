@@ -22,7 +22,7 @@ class BaselineAgent(object):
         obs_shape,
         action_shape,
         device,
-        hidden_dim=256,
+        hidden_dim=200,
         discount=0.99,
         init_temperature=0.01,
         alpha_lr=1e-3,
