@@ -1,0 +1,13 @@
+egl issues
+
+apt update
+apt install -y libgl1 libegl1 mesa-utils
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+
+Not sure how much this helps ! : pip install PyOpenGL PyOpenGL_accelerate
+
+Install torch 
+
+pip install torch==2.1.2 torchvision==0.16.2 \
+  --index-url https://download.pytorch.org/whl/cu118
